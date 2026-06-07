@@ -197,12 +197,22 @@ class ProjectorAblationModel(L.LightningModule):
                 
             del vlm; gc.collect()
 
+        elif projector_type == "llava_rand":
+            print("Building LLaVA-architecture Projector with random weights...")
+            proj_in_dim   = 1024   # matches CLIP ViT-L/14 output (LLaVA 1.5 default)
+            llm_hidden_dim = 4096  # matches LLaMA-2 7B hidden dim (LLaVA 1.5 default)
+            self.proj = nn.Sequential(
+                nn.Linear(proj_in_dim, llm_hidden_dim),
+                nn.GELU(),
+                nn.Linear(llm_hidden_dim, llm_hidden_dim),
+            )
+
         elif projector_type == "none":
             self.proj = nn.Identity()
             proj_in_dim = ve_dim
             llm_hidden_dim = ve_dim
         else:
-            raise ValueError("Invalid projector_type. Choose 'llava', 'gemma', 'gemma4', or 'none'.")
+            raise ValueError("Invalid projector_type. Choose 'llava', 'llava_rand', 'gemma', 'gemma4', or 'none'.")
 
         # --- 3. Dimension Bridge (optional) ---
         # The bridge is inserted between the VE and the projector only when

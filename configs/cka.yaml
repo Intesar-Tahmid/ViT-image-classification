@@ -1,0 +1,116 @@
+# Configuration for analyze_cka.py -- Experiment 8 (Feature Space Analysis / CKA)
+#
+# Follows the same convention as train.yaml / test.yaml: ONE base architecture
+# config (`base_config`) supplies model id, dataset paths, etc.; each entry
+# below just overrides the one or two fields (`projector_type`, `situation`)
+# that distinguish that run -- exactly how this project already drives its
+# whole ablation grid from a single train.yaml plus a checkpoint-naming
+# convention (`checkpoints/{model}_{proj}_{situation}/...`).
+#
+# All sub-studies (A/B/C) run on the SAME fixed probe sample drawn from
+# `probe.source_csv`, so every reported CKA score is directly comparable.
+# Use a held-out split that is never used for training or checkpoint
+# selection -- the local Tiny ImageNet validation CSV fits that role.
+
+base_config: "configs/train.yaml"
+
+probe:
+  source_csv: "data/validation.csv"
+  num_samples: 500          # probe-set size; raise for tighter CKA estimates, lower for speed
+  seed: 42                  # fixed seed -> identical probe images across every run/comparison
+  batch_size: 32
+  num_workers: 4
+  cache_dir: "output/cka"   # probe_set.csv + all sub-study CSVs/heatmaps are written here
+
+
+# ---------------------------------------------------------------------------
+# Study A -- Pipeline transformation vs. accuracy across the five `situation`
+# checkpoints (the headline "why does train_proj_ch win?" analysis).
+#
+# Each entry overrides `experiment.situation` on top of `base_config` and
+# points at the checkpoint that situation produced -- mirroring how
+# train_imagenet.py names checkpoint dirs as {model}_{proj}_{situation}.
+# Fill in `val_acc` from your training logs / the preliminary-results table --
+# without it, the CKA-vs-accuracy correlation cannot be computed.
+# ---------------------------------------------------------------------------
+study_a_situations:
+  - label: "train_ve_out_ch"
+    situation: "train_ve_out_ch"
+    checkpoint: "checkpoints/vit-large-patch16-224_llava_train_ve_out_ch/train_ve_out_ch-epoch=04.ckpt"
+    val_acc: null    # e.g. 0.867
+
+  - label: "train_proj_out_ch"
+    situation: "train_proj_out_ch"
+    checkpoint: "checkpoints/vit-large-patch16-224_llava_train_proj_out_ch/train_proj_out_ch-epoch=04.ckpt"
+    val_acc: null    # e.g. 0.875
+
+  - label: "train_proj_ch"
+    situation: "train_proj_ch"
+    checkpoint: "checkpoints/vit-large-patch16-224_llava_train_proj_ch/train_proj_ch-epoch=04.ckpt"
+    val_acc: null    # e.g. 0.899  (expected best -- the paper's key claim)
+
+  - label: "train_ve_ch"
+    situation: "train_ve_ch"
+    checkpoint: "checkpoints/vit-large-patch16-224_llava_train_ve_ch/train_ve_ch-epoch=04.ckpt"
+    val_acc: null    # e.g. 0.896
+
+  - label: "train_all"
+    situation: "train_all"
+    checkpoint: "checkpoints/vit-large-patch16-224_llava_train_all/train_all-epoch=04.ckpt"
+    val_acc: null    # e.g. 0.880  (expected worst -- "interference" hypothesis)
+
+
+# ---------------------------------------------------------------------------
+# Study B -- Pretrained weights vs. architecture (-> Experiment 2).
+# Each entry overrides only `model.projector_type` on top of `base_config`,
+# isolating how much that projector reshapes the same frozen VE's geometry.
+# `llava_rand` is the random-init counterpart of `llava` (ported onto this
+# branch -- see model_imagenet.py); `none` is a CKA == 1.0 sanity check.
+#
+# `checkpoint: null` evaluates pretrained weights as loaded from HF (VE +
+# projector pretrained, classification head untrained) -- the right reference
+# state for "what does the projector's pretrained transformation look like on
+# its own", independent of any downstream fine-tuning. Point at a real
+# checkpoint instead if you want the post-fine-tuning geometry.
+#
+# CAUTION (bridge confound): the base backbone (vit-large, 1024-dim) matches
+# llava's projector input (1024) exactly, so `llava`/`llava_rand` run with NO
+# bridge -- a clean pretrained-vs-random comparison. But `gemma` expects 1152,
+# so a RANDOM, UNTRAINED LinearBridge is auto-inserted (1024->1152). With
+# `checkpoint: null` that bridge stays random, so CKA(VE, gemma_proj) reflects
+# (random bridge -> pretrained gemma proj), NOT the pretrained weights alone.
+# For a fair cross-source claim, point gemma entries at a train_proj_ch
+# checkpoint (which trains the bridge) rather than null.
+# ---------------------------------------------------------------------------
+study_b_sources:
+  - label: "llava_pretrained"
+    projector_type: "llava"
+    checkpoint: null
+
+  - label: "llava_random"
+    projector_type: "llava_rand"
+    checkpoint: null
+
+  - label: "gemma_pretrained"
+    projector_type: "gemma"
+    checkpoint: null
+
+  - label: "no_projector"
+    projector_type: "none"
+    checkpoint: null
+
+
+# ---------------------------------------------------------------------------
+# Study C -- Cross-projector-source convergence: do independently-pretrained
+# VLM projector families end up reshaping the same frozen backbone's features
+# into similar geometries? List >= 2 pretrained-projector variants here
+# (labels may overlap with study_b_sources -- each study runs independently).
+# ---------------------------------------------------------------------------
+study_c_variants:
+  - label: "llava_pretrained"
+    projector_type: "llava"
+    checkpoint: null
+
+  - label: "gemma_pretrained"
+    projector_type: "gemma"
+    checkpoint: null
